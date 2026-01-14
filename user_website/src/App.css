@@ -392,6 +392,25 @@ select {
   text-align: center;
 }
 
+.rr-btn-medium {
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-weight: 800;
+}
+
+.rr-leaflet-wrap {
+  border-radius: 14px;
+  border: 1px solid var(--rr-border);
+  overflow: hidden;
+  box-shadow: var(--rr-shadow-sm);
+  background: white;
+}
+
+/* Ensure Leaflet controls/fonts render correctly inside our card layout */
+.rr-leaflet-wrap .leaflet-container {
+  font: inherit;
+}
+
 .rr-footer-note {
   margin-top: 14px;
   color: var(--rr-text-muted);

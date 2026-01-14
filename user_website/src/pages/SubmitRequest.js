@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import MapPreview from "../components/MapPreview";
 import { useRequests } from "../contexts/RequestsContext";
+import { geocodeAddress } from "../lib/geocoding";
 
 /**
  * PUBLIC_INTERFACE
@@ -45,36 +46,31 @@ export default function SubmitRequest() {
 
   const setField = (key, value) => setForm((p) => ({ ...p, [key]: value }));
 
-  const useMyLocation = () => {
+  const handleFindMyLocation = async () => {
     setMsg({ type: "", text: "" });
 
-    if (!navigator.geolocation) {
-      setMsg({ type: "error", text: "Geolocation is not supported in this browser." });
+    const address = String(form.address || "").trim();
+    if (!address) {
+      setMsg({ type: "error", text: "Please enter an address first." });
       return;
     }
 
     setBusy(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude.toFixed(6);
-        const lng = pos.coords.longitude.toFixed(6);
-
-        // MVP: No external reverse geocoding (per project constraints). We still populate a helpful address string.
-        setForm((p) => ({
-          ...p,
-          latitude: lat,
-          longitude: lng,
-          address: p.address || `Lat ${lat}, Lng ${lng}`,
-        }));
-        setBusy(false);
-        setMsg({ type: "success", text: "Location captured. Please confirm/edit the address field if needed." });
-      },
-      (err) => {
-        setBusy(false);
-        setMsg({ type: "error", text: err.message || "Unable to retrieve your location." });
-      },
-      { enableHighAccuracy: true, timeout: 12000 }
-    );
+    try {
+      const location = await geocodeAddress(address);
+      setForm((p) => ({
+        ...p,
+        latitude: location.lat.toFixed(6),
+        longitude: location.lon.toFixed(6),
+        // Replace with the canonical display_name, but keep something if API returns none.
+        address: location.displayName || p.address,
+      }));
+      setMsg({ type: "success", text: "Location found from address." });
+    } catch (err) {
+      setMsg({ type: "error", text: "Could not find location. Please enter a valid address." });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onSubmit = (e) => {
@@ -97,8 +93,8 @@ export default function SubmitRequest() {
   return (
     <div className="rr-grid">
       <section className="rr-card">
-        <h1>Submit Request</h1>
-        <p className="rr-muted">Provide your vehicle info, issue details, contact details, and breakdown location.</p>
+        <h1>Submit a breakdown request</h1>
+        <p className="rr-muted">Please fill in vehicle, issue, contact and your current breakdown location.</p>
 
         {msg.text ? (
           <div className={`rr-alert ${msg.type === "error" ? "rr-alert-error" : msg.type === "success" ? "rr-alert-success" : ""}`}>
@@ -107,33 +103,35 @@ export default function SubmitRequest() {
         ) : null}
 
         <form className="rr-form" onSubmit={onSubmit} style={{ marginTop: 12 }}>
-          <h3>Vehicle</h3>
+          <h3>Request details</h3>
 
-          <div className="rr-field">
-            <label htmlFor="make">Make (brand)</label>
-            <input id="make" value={form.make} onChange={(e) => setField("make", e.target.value)} placeholder="e.g., Toyota" />
+          <div className="rr-row" style={{ alignItems: "stretch" }}>
+            <div className="rr-field" style={{ flex: 1, minWidth: 220 }}>
+              <label htmlFor="make">Make</label>
+              <input id="make" value={form.make} onChange={(e) => setField("make", e.target.value)} placeholder="Toyota" />
+            </div>
+            <div className="rr-field" style={{ flex: 1, minWidth: 220 }}>
+              <label htmlFor="model">Model</label>
+              <input id="model" value={form.model} onChange={(e) => setField("model", e.target.value)} placeholder="Corolla" />
+            </div>
           </div>
 
-          <div className="rr-field">
-            <label htmlFor="model">Model</label>
-            <input id="model" value={form.model} onChange={(e) => setField("model", e.target.value)} placeholder="e.g., Corolla" />
-          </div>
-
-          <div className="rr-field">
-            <label htmlFor="year">Year</label>
-            <input
-              id="year"
-              value={form.year}
-              onChange={(e) => setField("year", e.target.value)}
-              inputMode="numeric"
-              placeholder="e.g., 2017"
-            />
-          </div>
-
-          <div className="rr-field">
-            <label htmlFor="bought">Bought</label>
-            <input id="bought" value={form.bought} onChange={(e) => setField("bought", e.target.value)} placeholder="e.g., 2021 (optional)" />
-            <div className="rr-help">Optional field for purchase year/date.</div>
+          <div className="rr-row" style={{ alignItems: "stretch" }}>
+            <div className="rr-field" style={{ flex: 1, minWidth: 180 }}>
+              <label htmlFor="year">Year</label>
+              <input
+                id="year"
+                value={form.year}
+                onChange={(e) => setField("year", e.target.value)}
+                inputMode="numeric"
+                placeholder="2017"
+              />
+            </div>
+            <div className="rr-field" style={{ flex: 1, minWidth: 180 }}>
+              <label htmlFor="bought">Bought</label>
+              <input id="bought" value={form.bought} onChange={(e) => setField("bought", e.target.value)} placeholder="2021" />
+              <div className="rr-help">Optional.</div>
+            </div>
           </div>
 
           <div className="rr-field">
@@ -142,57 +140,62 @@ export default function SubmitRequest() {
               id="licensePlate"
               value={form.licensePlate}
               onChange={(e) => setField("licensePlate", e.target.value)}
-              placeholder="e.g., ABC-1234"
+              placeholder="ABC-1234"
             />
           </div>
 
-          <h3>Issue</h3>
           <div className="rr-field">
             <label htmlFor="issueDescription">Issue description</label>
             <textarea
               id="issueDescription"
               value={form.issueDescription}
               onChange={(e) => setField("issueDescription", e.target.value)}
-              placeholder="Describe the issue (e.g., engine won't start, flat tire...)"
+              placeholder="Describe the issue (engine won't start, flat tire, etc.)"
             />
           </div>
 
-          <h3>Contact</h3>
-          <div className="rr-field">
-            <label htmlFor="contactName">Contact name</label>
-            <input id="contactName" value={form.contactName} onChange={(e) => setField("contactName", e.target.value)} placeholder="Your name" />
-          </div>
-
-          <div className="rr-field">
-            <label htmlFor="contactPhone">Contact phone number</label>
-            <input
-              id="contactPhone"
-              value={form.contactPhone}
-              onChange={(e) => setField("contactPhone", e.target.value)}
-              placeholder="e.g., +1 555 123 4567"
-            />
+          <div className="rr-row" style={{ alignItems: "stretch" }}>
+            <div className="rr-field" style={{ flex: 1, minWidth: 220 }}>
+              <label htmlFor="contactName">Contact name</label>
+              <input
+                id="contactName"
+                value={form.contactName}
+                onChange={(e) => setField("contactName", e.target.value)}
+                placeholder="Your name"
+              />
+            </div>
+            <div className="rr-field" style={{ flex: 1, minWidth: 220 }}>
+              <label htmlFor="contactPhone">Contact phone number</label>
+              <input
+                id="contactPhone"
+                value={form.contactPhone}
+                onChange={(e) => setField("contactPhone", e.target.value)}
+                placeholder="+1 555 123 4567"
+              />
+            </div>
           </div>
 
           <h3>Location</h3>
+
           <div className="rr-field">
             <label htmlFor="address">Address</label>
             <input
               id="address"
               value={form.address}
               onChange={(e) => setField("address", e.target.value)}
-              placeholder="Address or helpful landmark"
+              placeholder="Enter your breakdown location"
             />
-            <div className="rr-help">You can type an address, and/or use “Use my location” to auto-fill coordinates.</div>
+            <div className="rr-help">Enter an address, then click “Find my location” to auto-fill coordinates.</div>
           </div>
 
-          <div className="rr-row">
+          <div className="rr-row" style={{ alignItems: "stretch" }}>
             <div className="rr-field" style={{ flex: 1, minWidth: 160 }}>
               <label htmlFor="latitude">Latitude</label>
               <input
                 id="latitude"
                 value={form.latitude}
                 onChange={(e) => setField("latitude", e.target.value)}
-                placeholder="e.g., 37.7749"
+                placeholder="e.g., 37.774900"
                 inputMode="decimal"
               />
             </div>
@@ -202,16 +205,19 @@ export default function SubmitRequest() {
                 id="longitude"
                 value={form.longitude}
                 onChange={(e) => setField("longitude", e.target.value)}
-                placeholder="e.g., -122.4194"
+                placeholder="e.g., -122.419400"
                 inputMode="decimal"
               />
             </div>
+
+            <div style={{ display: "flex", alignItems: "end" }}>
+              <button className="rr-btn rr-btn-secondary rr-btn-medium" type="button" onClick={handleFindMyLocation} disabled={busy}>
+                {busy ? "Finding…" : "Find my location"}
+              </button>
+            </div>
           </div>
 
-          <div className="rr-row">
-            <button className="rr-btn rr-btn-secondary" type="button" onClick={useMyLocation} disabled={busy}>
-              Use my location
-            </button>
+          <div className="rr-row" style={{ marginTop: 6 }}>
             <button className="rr-btn rr-btn-primary" type="submit" disabled={busy}>
               {busy ? "Submitting…" : "Submit request"}
             </button>
@@ -225,13 +231,9 @@ export default function SubmitRequest() {
       </section>
 
       <aside className="rr-card">
-        <h2>Map</h2>
-        <p className="rr-muted">After “Use my location”, the preview will show your coordinates.</p>
-        <MapPreview
-          latitude={form.latitude}
-          longitude={form.longitude}
-          hint="In a later version, this will display a map. For MVP, no external map APIs are used."
-        />
+        <h2>Location Map</h2>
+        <p className="rr-muted">Map will update after you click “Find my location”.</p>
+        <MapPreview latitude={form.latitude} longitude={form.longitude} height={360} hint="Powered by OpenStreetMap tiles." />
       </aside>
     </div>
   );
